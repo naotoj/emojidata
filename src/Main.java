@@ -25,8 +25,20 @@ public class Main {
                 })
                 .collect(Collectors.toMap(AbstractMap.SimpleEntry::getKey, AbstractMap.SimpleEntry::getValue, (v1, v2) -> v1 | v2));
 //        emojis.keySet().forEach(System.out::println);
-        var type = (int)emojis.get(0x4e00);
-        System.out.println(type & EMOJI_PRESENTATION);
+//        var type = (int)emojis.get(0x4e00);
+//        System.out.println(type & EMOJI_PRESENTATION);
+        System.out.print("""
+                var emojiMap = Map.ofEntries(
+                """);
+        emojis.forEach((k, v) -> {
+            System.out.print("""
+                        Map.entry(0x%x, 0x%x),
+                    """.formatted(k, v));
+        });
+        System.out.print("""
+                        Map.entry(0, 0) // dummy
+                    );
+                    """);
     }
 
     private static final int EMOJI = 0x00000001;
