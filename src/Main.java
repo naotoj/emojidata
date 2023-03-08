@@ -10,6 +10,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.AbstractMap;
 import java.util.Map;
+import java.util.Set;
+import java.util.SortedSet;
+import java.util.TreeMap;
+import java.util.TreeSet;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -17,10 +21,16 @@ import java.util.stream.Stream;
 
 public class Main {
     public static void main(String[] args) throws Exception {
-        var emojis = Files.readAllLines(Path.of("../../dev/jdk/git/master/open/src/java.base/share/data/unicodedata/emoji/emoji-data.txt"))
-                .stream()
-                .map(line -> line.split("#", 2)[0])
-                .filter(Predicate.not(String::isBlank))
+        var emojis =
+            Stream.concat(
+                // Fast path for non-emoji below 0x2000, some of those are overridden below
+                Stream.of("00..10FFFF ; Non_Emoji"),
+
+                // Others from emoji-data.txt
+                Files.readAllLines(Path.of("../../dev/jdk/git/master/open/src/java.base/share/data/unicodedata/emoji/emoji-data.txt"))
+                    .stream()
+                    .map(line -> line.split("#", 2)[0])
+                    .filter(Predicate.not(String::isBlank)))
                 .map(line -> line.split("[ \t]*;[ \t]*", 2))
                 .flatMap(map -> {
                     var range = map[0].split("\\.\\.", 2);
@@ -33,35 +43,86 @@ public class Main {
 
                 })
                 .collect(Collectors.toMap(AbstractMap.SimpleEntry::getKey, AbstractMap.SimpleEntry::getValue, (v1, v2) -> v1 | v2));
-//        System.out.print("""
-//                var emojiMap = Map.ofEntries(
-//                """);
-//        emojis.forEach((k, v) -> {
+
+//
+//        try (var oos = new ObjectOutputStream(new BufferedOutputStream(new FileOutputStream("emojis.ser")))) {
+//            oos.writeObject(emojis);
+//        }
+//
+//        Map<Integer, Integer> deserEmojis ;
+//        try (var ois = new ObjectInputStream(new BufferedInputStream(new FileInputStream("emojis.ser")))) {
+//            deserEmojis = (Map<Integer, Integer>)ois.readObject();
+//        }
+//
+//        deserEmojis.keySet()
+//                .stream()
+//                .sorted()
+//                .forEach(cp -> {
 //            System.out.print("""
-//                        Map.entry(0x%x, 0x%x),
-//                    """.formatted(k, v));
+//                    0x%x (%s): 0x%x
+//                    """.formatted(cp, Character.toString(cp), deserEmojis.get(cp)));
 //        });
-//        System.out.print("""
-//                        Map.entry(0, 0) // dummy
-//                    );
-//                    """);
 
-        try (var oos = new ObjectOutputStream(new BufferedOutputStream(new FileOutputStream("emojis.ser")))) {
-            oos.writeObject(emojis);
-        }
+            var reversed = emojis.entrySet().stream()
+                .collect(Collectors.toMap(e -> e.getValue(),
+                        e -> new TreeSet<>(Set.of(e.getKey())),
+                        (v1, v2) -> {v1.addAll(v2); return v1;},
+                        TreeMap::new));
 
-        Map<Integer, Integer> deserEmojis ;
-        try (var ois = new ObjectInputStream(new BufferedInputStream(new FileInputStream("emojis.ser")))) {
-            deserEmojis = (Map<Integer, Integer>)ois.readObject();
-        }
+        System.out.print("""
+            int getType(int cp) {
+            """);
+        // BMP
+        printConditions(reversed, true);
+        // non-BMP
+        printConditions(reversed, false);
+        System.out.print("""
+                else return 0;
+            }
+            """);
+    }
 
-        deserEmojis.keySet()
-                .stream()
-                .sorted()
-                .forEach(cp -> {
+    static void printConditions(Map<Integer, ? extends SortedSet<Integer>> m, boolean isLow) {
+        final boolean[] elseif = new boolean[1];
+        final Integer[] start = new Integer[1];
+        final Integer[] end = new Integer[1];
+        m.forEach((k,v) -> {
+            if (elseif[0]) {
+                System.out.print("    else ");
+            } else {
+                elseif[0] = true;
+            }
             System.out.print("""
-                    0x%x (%s): 0x%x
-                    """.formatted(cp, Character.toString(cp), deserEmojis.get(cp)));
+                        if (
+                    """);
+            v.forEach(cp -> {
+                if (start[0] == null) {
+                    if (isLow ^ cp < 0x2000) {
+                        return;
+                    }
+                    start[0] = cp;
+                } else {
+                    if (end[0] == null && start[0].intValue() + 1 == cp.intValue() ||
+                            end[0] != null && end[0].intValue() + 1 == cp.intValue()) {
+                        end[0] = cp;
+                    } else {
+                        if (end[0] != null) {
+                            System.out.print("""
+                                        cp >= 0x%x && cp <= 0x%x ||
+                                """.formatted(start[0], end[0], k));
+                        } else {
+                            System.out.print("""
+                                        cp == 0x%x ||
+                                """.formatted(start[0], k));
+                        }
+                        start[0] = null;
+                        end[0] = null;
+                    }
+                }
+            });
+            System.out.print("""
+                            false) return 0x%x;
+                    """.formatted(k));
         });
     }
 
@@ -73,6 +134,7 @@ public class Main {
     private static final int EXTENDED_PICTOGRAPHIC = 0x00000020;
     static int convertType(String type) {
         return switch (type) {
+            case "Non_Emoji" -> 0;
             case "Emoji" -> EMOJI;
             case "Emoji_Presentation" -> EMOJI_PRESENTATION;
             case "Emoji_Modifier" -> EMOJI_MODIFIER;
