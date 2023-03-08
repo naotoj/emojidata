@@ -1,6 +1,15 @@
+import java.io.BufferedInputStream;
+import java.io.BufferedOutputStream;
+import java.io.DataOutputStream;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.ObjectInputFilter;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.AbstractMap;
+import java.util.Map;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -24,21 +33,36 @@ public class Main {
 
                 })
                 .collect(Collectors.toMap(AbstractMap.SimpleEntry::getKey, AbstractMap.SimpleEntry::getValue, (v1, v2) -> v1 | v2));
-//        emojis.keySet().forEach(System.out::println);
-//        var type = (int)emojis.get(0x4e00);
-//        System.out.println(type & EMOJI_PRESENTATION);
-        System.out.print("""
-                var emojiMap = Map.ofEntries(
-                """);
-        emojis.forEach((k, v) -> {
+//        System.out.print("""
+//                var emojiMap = Map.ofEntries(
+//                """);
+//        emojis.forEach((k, v) -> {
+//            System.out.print("""
+//                        Map.entry(0x%x, 0x%x),
+//                    """.formatted(k, v));
+//        });
+//        System.out.print("""
+//                        Map.entry(0, 0) // dummy
+//                    );
+//                    """);
+
+        try (var oos = new ObjectOutputStream(new BufferedOutputStream(new FileOutputStream("emojis.ser")))) {
+            oos.writeObject(emojis);
+        }
+
+        Map<Integer, Integer> deserEmojis ;
+        try (var ois = new ObjectInputStream(new BufferedInputStream(new FileInputStream("emojis.ser")))) {
+            deserEmojis = (Map<Integer, Integer>)ois.readObject();
+        }
+
+        deserEmojis.keySet()
+                .stream()
+                .sorted()
+                .forEach(cp -> {
             System.out.print("""
-                        Map.entry(0x%x, 0x%x),
-                    """.formatted(k, v));
+                    0x%x (%s): 0x%x
+                    """.formatted(cp, Character.toString(cp), deserEmojis.get(cp)));
         });
-        System.out.print("""
-                        Map.entry(0, 0) // dummy
-                    );
-                    """);
     }
 
     private static final int EMOJI = 0x00000001;
