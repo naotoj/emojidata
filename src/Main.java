@@ -9,6 +9,7 @@ import java.io.ObjectOutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.AbstractMap;
+import java.util.ArrayList;
 import java.util.Map;
 import java.util.Set;
 import java.util.SortedSet;
@@ -20,11 +21,14 @@ import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
 public class Main {
+    static final boolean[] elseif = new boolean[1];
+
     public static void main(String[] args) throws Exception {
+        var THRESHOLD_CP = 0x2000;
         var emojis =
             Stream.concat(
-                // Fast path for non-emoji below 0x2000, some of those are overridden below
-                Stream.of("00..10FFFF ; Non_Emoji"),
+                // Fast path for non-emoji below THRESHOLD_CP, some of those are overridden below
+                Stream.of("00..%s ; Non_Emoji".formatted(Integer.toHexString(THRESHOLD_CP))),
 
                 // Others from emoji-data.txt
                 Files.readAllLines(Path.of("../../dev/jdk/git/master/open/src/java.base/share/data/unicodedata/emoji/emoji-data.txt"))
@@ -72,32 +76,32 @@ public class Main {
         System.out.print("""
             int getType(int cp) {
             """);
+
         // BMP
-        printConditions(reversed, true);
+        printConditions(reversed, true, THRESHOLD_CP);
+
+        System.out.print("""
+            
+                // cp > 0x%x
+            """.formatted(THRESHOLD_CP));
+
         // non-BMP
-        printConditions(reversed, false);
+        printConditions(reversed, false, THRESHOLD_CP);
         System.out.print("""
                 else return 0;
             }
             """);
     }
 
-    static void printConditions(Map<Integer, ? extends SortedSet<Integer>> m, boolean isLow) {
-        final boolean[] elseif = new boolean[1];
+    static void printConditions(Map<Integer, ? extends SortedSet<Integer>> m, boolean isLow, int threshold) {
         final Integer[] start = new Integer[1];
         final Integer[] end = new Integer[1];
         m.forEach((k,v) -> {
-            if (elseif[0]) {
-                System.out.print("    else ");
-            } else {
-                elseif[0] = true;
-            }
-            System.out.print("""
-                        if (
-                    """);
+            // accumulate conditions
+            var conds = new ArrayList<String>();
             v.forEach(cp -> {
                 if (start[0] == null) {
-                    if (isLow ^ cp < 0x2000) {
+                    if (isLow ^ cp < threshold) {
                         return;
                     }
                     start[0] = cp;
@@ -107,25 +111,35 @@ public class Main {
                         end[0] = cp;
                     } else {
                         if (end[0] != null) {
-                            System.out.print("""
-                                        cp >= 0x%x && cp <= 0x%x ||
-                                """.formatted(start[0], end[0], k));
+                            conds.add("cp >= 0x%x && cp <= 0x%x".formatted(start[0], end[0]));
+
                         } else {
-                            System.out.print("""
-                                        cp == 0x%x ||
-                                """.formatted(start[0], k));
+                            conds.add("cp == 0x%x".formatted(start[0]));
                         }
                         start[0] = null;
                         end[0] = null;
                     }
                 }
             });
-            System.out.print("""
-                            false) return 0x%x;
-                    """.formatted(k));
+            if (!conds.isEmpty()) {
+                var condsStr = conds.stream().collect(Collectors.joining(" ||\n        "));
+                if (elseif[0]) {
+                    System.out.print("""
+                            else if (%s) 
+                                return 0x%x;
+                        """.formatted(condsStr, k));
+                } else {
+                    System.out.print("""
+                        if (%s) 
+                            return 0x%x;
+                    """.formatted(condsStr, k));
+                    elseif[0] = true;
+                }
+            }
         });
     }
 
+    private static final int NON_EMOJI = 0x00000000;
     private static final int EMOJI = 0x00000001;
     private static final int EMOJI_PRESENTATION = 0x00000002;
     private static final int EMOJI_MODIFIER = 0x00000004;
@@ -134,7 +148,7 @@ public class Main {
     private static final int EXTENDED_PICTOGRAPHIC = 0x00000020;
     static int convertType(String type) {
         return switch (type) {
-            case "Non_Emoji" -> 0;
+            case "Non_Emoji" -> NON_EMOJI;
             case "Emoji" -> EMOJI;
             case "Emoji_Presentation" -> EMOJI_PRESENTATION;
             case "Emoji_Modifier" -> EMOJI_MODIFIER;
