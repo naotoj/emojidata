@@ -3,70 +3,80 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /**
- * Generate EmojiData.java
+ * Parses extra properties data files of UCD, and replaces the placeholders in
+ * the given template source file with the generated if-statements. For example,
+ * if the properties file has:
+ * <blockquote>
+ *     0009..000D   ; White_Space
+ *     0020         ; White_Space
+ *     2000..200A   ; White_Space
+ * </blockquote>
+ * and the template file contains
+ * <blockquote>
+ *     %%%White_Space%%%
+ * </blockquote>
+ * then the generated .java file would have
+ * <blockquote>
+ *     (c >= 0x0009 && c <= 0x000D) ||
+ *     (c == 0x0020) ||
+ *     (c >= 0x2000 && c <= 0x200A)
+ * </blockquote>
+ *
+ * Arguments to this utility:
  *    args[0]: Full path string to the template file
- *    args[1]: Full path string to the directory that contains "emoji-data.txt"
- *    args[3]:
+ *    args[1]: Full path string to the properties file
  *    args[2]: Full path string to the generated .java file
+ *    args...: Name of the property to be replaced
  */
 public class  Main {
     public static void main(String[] args) {
+        var templateFile = Paths.get(args[0]);
+        var propertiesFile = Paths.get(args[1]);
+        var gensrcFile = Paths.get(args[2]);
+        var propertyNames = Arrays.copyOfRange(args, 3, args.length);
+        var replacementMap = new HashMap<String, String>();
+
         try {
-            final Range[] last = new Range[1]; // last extended pictographic range
-            last[0] = new Range(0, 0);
-
-            List<Range> extPictRanges = Files.lines(Paths.get(args[1], "IndicSyllabicCategory.txt"))
-                    .filter(Predicate.not(l -> l.startsWith("#") || l.isBlank()))
-                    .filter(l -> l.contains("; Extended_Pictograph"))
-                    .map(l -> new Range(l.replaceFirst(" .*", "")))
-                    .sorted()
-                    .collect(ArrayList<Range>::new,
-                            (list, r) -> {
-                                // collapsing consecutive pictographic ranges
-                                int lastIndex = list.size() - 1;
-                                if (lastIndex >= 0) {
-                                    Range lastRange = list.get(lastIndex);
-                                    if (lastRange.last + 1 == r.start) {
-                                        list.set(lastIndex, new Range(lastRange.start, r.last));
-                                        return;
+            for (var propertyName: propertyNames) {
+                List<Range> ranges = Files.lines(propertiesFile)
+                        .filter(Predicate.not(l -> l.startsWith("#") || l.isBlank()))
+                        .filter(l -> l.contains("; " + propertyName))
+                        .map(l -> new Range(l.replaceFirst(" .*", "")))
+                        .sorted()
+                        .collect(ArrayList<Range>::new,
+                                (list, r) -> {
+                                    // collapsing consecutive pictographic ranges
+                                    int lastIndex = list.size() - 1;
+                                    if (lastIndex >= 0) {
+                                        Range lastRange = list.get(lastIndex);
+                                        if (lastRange.last + 1 == r.start) {
+                                            list.set(lastIndex, new Range(lastRange.start, r.last));
+                                            return;
+                                        }
                                     }
-                                }
-                                list.add(r);
-                            },
-                            ArrayList<Range>::addAll);
+                                    list.add(r);
+                                },
+                                ArrayList<Range>::addAll);
 
 
-            // make the code point conditions
-            // only very few codepoints below 0x2000 are "emojis", so separate them
-            // out to generate a fast-path check that can be efficiently inlined
-            String lowExtPictCodePoints = extPictRanges.stream()
-                    .takeWhile(r -> r.last < 0x2000)
-                    .map(r -> rangeToString(r))
-                    .collect(Collectors.joining(" ||\n", "", ";\n"));
+                replacementMap.put("%%%" + propertyName + "%%%",
+                    ranges.stream()
+                        .map(Main::rangeToString)
+                        .collect(Collectors.joining(" ||\n", "", ";\n")));
+            }
 
-            String highExtPictCodePoints = extPictRanges.stream()
-                    .dropWhile(r -> r.last < 0x2000)
-                    .map(r -> rangeToString(r))
-                    .collect(Collectors.joining(" ||\n", "", ";\n"));
-
-            // Generate EmojiData.java file
-            Files.write(Paths.get(args[2]),
-                    Files.lines(Paths.get(args[0]))
-                            .flatMap(l -> {
-                                if (l.equals("%%%EXTPICT_LOW%%%")) {
-                                    return Stream.of(lowExtPictCodePoints);
-                                } else if (l.equals("%%%EXTPICT_HIGH%%%")) {
-                                    return Stream.of(highExtPictCodePoints);
-                                } else {
-                                    return Stream.of(l);
-                                }
-                            })
+            // Generate .java file
+            Files.write(gensrcFile,
+                    Files.lines(templateFile)
+                            .flatMap(l -> Stream.of(replacementMap.getOrDefault(l.trim(), l)))
                             .collect(Collectors.toList()),
                     StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
         } catch (IOException e) {

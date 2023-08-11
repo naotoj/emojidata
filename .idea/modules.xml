@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/EmojiData.iml" filepath="$PROJECT_DIR$/EmojiData.iml" />
+      <module fileurl="file://$PROJECT_DIR$/ExPropsData.iml" filepath="$PROJECT_DIR$/ExPropsData.iml" />
     </modules>
   </component>
 </project>
