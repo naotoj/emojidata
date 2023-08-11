@@ -12,8 +12,8 @@ import java.util.stream.Stream;
 
 /**
  * Parses extra properties data files of UCD, and replaces the placeholders in
- * the given template source file with the generated if-statements. For example,
- * if the properties file has:
+ * the given template source file with the generated conditions, then emit
+ * the produced .java files. For example, if the properties file has:
  * <blockquote>
  *     0009..000D   ; White_Space
  *     0020         ; White_Space
@@ -23,18 +23,18 @@ import java.util.stream.Stream;
  * <blockquote>
  *     %%%White_Space%%%
  * </blockquote>
- * then the generated .java file would have
+ * then the generated .java file would have the following in place:
  * <blockquote>
- *     (c >= 0x0009 && c <= 0x000D) ||
- *     (c == 0x0020) ||
- *     (c >= 0x2000 && c <= 0x200A)
+ *     (cp >= 0x0009 && cp <= 0x000D) ||
+ *      cp == 0x0020 ||
+ *     (cp >= 0x2000 && cp <= 0x200A);
  * </blockquote>
  *
  * Arguments to this utility:
  *    args[0]: Full path string to the template file
  *    args[1]: Full path string to the properties file
  *    args[2]: Full path string to the generated .java file
- *    args...: Name of the property to be replaced
+ *    args[3...]: Names of the property to generate the conditions
  */
 public class  Main {
     public static void main(String[] args) {
