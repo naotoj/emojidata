@@ -15,13 +15,13 @@ import java.util.stream.Stream;
  * the given template source file with the generated conditions, then emit
  * the produced .java files. For example, if the properties file has:
  * <blockquote>
- *     0009..000D   ; White_Space
- *     0020         ; White_Space
- *     2000..200A   ; White_Space
+ *     0009..000D   ; Type (; Value)
+ *     0020         ; Type (; Value)
+ *     2000..200A   ; Type (; Value)
  * </blockquote>
  * and the template file contains
  * <blockquote>
- *     %%%White_Space%%%
+ *     %%%Type(=Value)%%%
  * </blockquote>
  * then the generated .java file would have the following in place:
  * <blockquote>
@@ -46,9 +46,11 @@ public class  Main {
 
         try {
             for (var propertyName: propertyNames) {
+                var pn = propertyName.replaceFirst("=", "; ");
+
                 List<Range> ranges = Files.lines(propertiesFile)
                         .filter(Predicate.not(l -> l.startsWith("#") || l.isBlank()))
-                        .filter(l -> l.contains("; " + propertyName))
+                        .filter(l -> l.contains("; " + pn))
                         .map(l -> new Range(l.replaceFirst(" .*", "")))
                         .sorted()
                         .collect(ArrayList<Range>::new,
